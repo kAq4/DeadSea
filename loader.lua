@@ -1,33 +1,47 @@
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
 
 local Loader = {}
 
--- Require the Core loader
-local CoreLoader = require(ReplicatedStorage:WaitForChild("Core"):WaitForChild("Loader"))
+-- Try requiring Core loader if it exists
+local success, CoreLoader = pcall(function()
+    return require(ReplicatedStorage:WaitForChild("Core"):WaitForChild("Loader"))
+end)
 
--- Load all modules from Core
-Loader.modules = CoreLoader.LoadModules()
-
-print("Core modules loaded:")
-for name, _ in pairs(Loader.modules) do
-    print("-", name)
-end
-
--- Optional: load UI from ReplicatedStorage.DeadSea.UI
-Loader.ui = {}
-local uiFolder = ReplicatedStorage:WaitForChild("DeadSea"):WaitForChild("UI")
-for _, gui in pairs(uiFolder:GetChildren()) do
-    if gui:IsA("ScreenGui") then
-        local clone = gui:Clone()
-        clone.Parent = Players.LocalPlayer and Players.LocalPlayer:WaitForChild("PlayerGui") or nil
-        Loader.ui[gui.Name] = clone
+-- SERVER: load modules
+if RunService:IsServer() and success and CoreLoader then
+    Loader.modules = CoreLoader.LoadModules()
+    print("[Server] Core modules loaded:")
+    for name, _ in pairs(Loader.modules) do
+        print("-", name)
     end
+else
+    Loader.modules = {}
 end
 
-print("UI loaded:")
-for name, _ in pairs(Loader.ui) do
-    print("-", name)
+-- CLIENT: load UI
+if RunService:IsClient() then
+    Loader.ui = {}
+
+    local player = Players.LocalPlayer
+    local playerGui = player and player:WaitForChild("PlayerGui")
+
+    if playerGui then
+        local uiFolder = ReplicatedStorage:WaitForChild("DeadSea"):WaitForChild("UI")
+        for _, gui in pairs(uiFolder:GetChildren()) do
+            if gui:IsA("ScreenGui") then
+                local clone = gui:Clone()
+                clone.Parent = playerGui
+                Loader.ui[gui.Name] = clone
+            end
+        end
+    end
+
+    print("[Client] UI loaded:")
+    for name, _ in pairs(Loader.ui) do
+        print("-", name)
+    end
 end
 
 return Loader
