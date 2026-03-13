@@ -1,59 +1,33 @@
--- DeadSea/Loader.lua
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local Players = game:GetService("Players")
+
 local Loader = {}
-Loader.Modules = {}
-Loader.UI = {}
 
--- Load all ModuleScripts from Modules folder
-function Loader.LoadModules()
-    local folder = game:GetService("ReplicatedStorage"):WaitForChild("DeadSea"):WaitForChild("Modules")
+-- Require the Core loader
+local CoreLoader = require(ReplicatedStorage:WaitForChild("Core"):WaitForChild("Loader"))
 
-    for _, category in pairs(folder:GetChildren()) do
-        for _, module in pairs(category:GetChildren()) do
-            if module:IsA("ModuleScript") then
-                Loader.Modules[module.Name] = require(module)
-            end
-        end
-    end
+-- Load all modules from Core
+Loader.modules = CoreLoader.LoadModules()
 
-    return Loader.Modules
+print("Core modules loaded:")
+for name, _ in pairs(Loader.modules) do
+    print("-", name)
 end
 
--- Reload a specific module (optional, useful for dev)
-function Loader.ReloadModule(moduleName)
-    local folder = game:GetService("ReplicatedStorage"):WaitForChild("DeadSea"):WaitForChild("Modules")
-    for _, category in pairs(folder:GetChildren()) do
-        for _, module in pairs(category:GetChildren()) do
-            if module:IsA("ModuleScript") and module.Name == moduleName then
-                Loader.Modules[module.Name] = require(module)
-                return Loader.Modules[module.Name]
-            end
-        end
+-- Optional: load UI from ReplicatedStorage.DeadSea.UI
+Loader.ui = {}
+local uiFolder = ReplicatedStorage:WaitForChild("DeadSea"):WaitForChild("UI")
+for _, gui in pairs(uiFolder:GetChildren()) do
+    if gui:IsA("ScreenGui") then
+        local clone = gui:Clone()
+        clone.Parent = Players.LocalPlayer and Players.LocalPlayer:WaitForChild("PlayerGui") or nil
+        Loader.ui[gui.Name] = clone
     end
-    return nil
 end
 
--- Load all UI scripts from UI folder
-function Loader.LoadUI()
-    local folder = game:GetService("ReplicatedStorage"):WaitForChild("DeadSea"):WaitForChild("UI")
-
-    for _, uiElement in pairs(folder:GetChildren()) do
-        if uiElement:IsA("ScreenGui") then
-            Loader.UI[uiElement.Name] = uiElement:Clone()
-        end
-    end
-
-    return Loader.UI
-end
-
--- Reload a specific UI script
-function Loader.ReloadUI(uiName)
-    local folder = game:GetService("ReplicatedStorage"):WaitForChild("DeadSea"):WaitForChild("UI")
-    local uiElement = folder:FindFirstChild(uiName)
-    if uiElement and uiElement:IsA("ScreenGui") then
-        Loader.UI[uiName] = uiElement:Clone()
-        return Loader.UI[uiName]
-    end
-    return nil
+print("UI loaded:")
+for name, _ in pairs(Loader.ui) do
+    print("-", name)
 end
 
 return Loader

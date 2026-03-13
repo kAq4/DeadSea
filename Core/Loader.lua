@@ -1,15 +1,15 @@
--- Core/Loader.lua
 local Loader = {}
 Loader.modules = {}
 
+-- Load all ModuleScripts inside ReplicatedStorage.DeadSea.Modules
 function Loader.LoadModules()
-    local folder = game.ReplicatedStorage:WaitForChild("DeadSea"):WaitForChild("Modules")
+    local folder = game:GetService("ReplicatedStorage"):WaitForChild("DeadSea"):WaitForChild("Modules")
     
     for _, category in pairs(folder:GetChildren()) do
         for _, module in pairs(category:GetChildren()) do
             if module:IsA("ModuleScript") then
                 local data = require(module)
-                -- store by module name for easier access
+                -- store modules by name for easy access
                 Loader.modules[module.Name] = data
             end
         end
@@ -18,9 +18,9 @@ function Loader.LoadModules()
     return Loader.modules
 end
 
--- Optional: reload a specific module (useful for dev)
+-- Reload a specific module (useful during development)
 function Loader.ReloadModule(moduleName)
-    local folder = game.ReplicatedStorage:WaitForChild("DeadSea"):WaitForChild("Modules")
+    local folder = game:GetService("ReplicatedStorage"):WaitForChild("DeadSea"):WaitForChild("Modules")
     for _, category in pairs(folder:GetChildren()) do
         for _, module in pairs(category:GetChildren()) do
             if module:IsA("ModuleScript") and module.Name == moduleName then
@@ -30,6 +30,11 @@ function Loader.ReloadModule(moduleName)
         end
     end
     return nil
+end
+
+-- Optional: allow clearing all loaded modules
+function Loader.ClearModules()
+    Loader.modules = {}
 end
 
 return Loader
