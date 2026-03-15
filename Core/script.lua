@@ -985,21 +985,20 @@ end)
 
 
 --------------------------------------------------
--- AUTO CHEST FARM WITH PATHFINDING + SERVER HOP REINJECT
+-- HUMAN-LIKE PULSE AUTO CHEST (ANTI-CHEAT SAFE)
 --------------------------------------------------
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local TeleportService = game:GetService("TeleportService")
 local VirtualInputManager = game:GetService("VirtualInputManager")
-local PathfindingService = game:GetService("PathfindingService")
+local HttpService = game:GetService("HttpService")
 local LocalPlayer = Players.LocalPlayer
 local workspace = workspace
-local HttpService = game:GetService("HttpService")
 
--- UI setup
-local AutoChestTab = Window:CreateTab("Auto Chest","Box") -- your UI library
+-- UI Setup
+local AutoChestTab = Window:CreateTab("Auto Chest","Box")
 
--- MJ table
+-- Script state
 local MJ = MJ or {}
 MJ.AutoChest = false
 MJ.ChestESP = false
@@ -1007,7 +1006,10 @@ MJ.ChestESP = false
 local ChestList = {}
 local ChestBlacklist = {}
 local ChestTimers = {}
-local ServerHopCooldown = 10 -- seconds before server hop
+local BaseSpeed = 120
+local PulseInterval = 0.05
+local ServerHopCooldown = 10 -- seconds before hop
+local CachedScript = loadstring(game:HttpGet("https://raw.githubusercontent.com/kAq4/DeadSea/refs/heads/main/Core/script.lua"))() -- pre-load
 
 --------------------------------------------------
 -- CHEST SCANNER
@@ -1017,7 +1019,7 @@ local function ScanChests()
     for _,v in ipairs(workspace:GetDescendants()) do
         if v.Name == "Hitbox" and v:IsA("BasePart") then
             local model = v.Parent
-            if model and model:FindFirstChild("Glow") and not v.Anchored and v.Size.Magnitude < 15 then
+            if model and model:FindFirstChild("Glow") and not v.Anchored then
                 table.insert(ChestList, v)
             end
         end
@@ -1026,7 +1028,9 @@ end
 
 task.spawn(function()
     while task.wait(2) do
-        ScanChests()
+        if MJ.AutoChest then
+            ScanChests()
+        end
     end
 end)
 
@@ -1050,10 +1054,9 @@ task.spawn(function()
 end)
 
 --------------------------------------------------
--- GET CLOSEST CHEST
+-- GET CLOSEST CHEST (ignores blacklisted)
 --------------------------------------------------
 local function GetClosestChest(hrp)
-    if not hrp then return end
     local closest
     local shortest = math.huge
     for _,chest in ipairs(ChestList) do
@@ -1068,49 +1071,57 @@ local function GetClosestChest(hrp)
 end
 
 --------------------------------------------------
--- PATHFIND TO CHEST
+-- PULSE HORIZONTAL MOVEMENT
 --------------------------------------------------
-local function PathfindToChest(humanoid, chest)
-    if not humanoid or not chest then return false end
-    local hrp = humanoid.RootPart
-    if not hrp then return false end
+local function PulseToChest(hrp, chest)
+    local targetPos = chest.Position
+    local direction = Vector3.new(targetPos.X - hrp.Position.X, 0, targetPos.Z - hrp.Position.Z)
+    if direction.Magnitude < 1 then return end
+    direction = direction.Unit
 
-    local path = PathfindingService:CreatePath({
-        AgentRadius = 2,
-        AgentHeight = 5,
-        AgentCanJump = true,
-        AgentJumpHeight = 10,
-        AgentMaxSlope = 45,
-    })
-    path:ComputeAsync(hrp.Position, chest.Position + Vector3.new(0,2,0))
-
-    local waypoints = path:GetWaypoints()
-    for _,wp in ipairs(waypoints) do
-        humanoid:MoveTo(wp.Position)
-        humanoid.MoveToFinished:Wait()
-        if MJ.AutoChest == false then return false end
-    end
-    return true
+    -- small horizontal velocity pulse
+    hrp.Velocity = Vector3.new(direction.X * BaseSpeed, hrp.Velocity.Y, direction.Z * BaseSpeed)
 end
 
 --------------------------------------------------
--- SERVER HOP FUNCTION WITH SCRIPT REINJECT
+-- LOOK DOWN AT CHEST (SAFE)
+--------------------------------------------------
+local function LookAtChest(chest)
+    local camera = workspace.CurrentCamera
+    local targetPos = chest.Position - Vector3.new(0,5,0) -- slightly down
+    -- small randomization to mimic human aim
+    local offset = Vector3.new(math.random(-1,1), math.random(-1,1), math.random(-1,1))
+    camera.CFrame = CFrame.lookAt(camera.CFrame.Position, targetPos + offset)
+end
+
+--------------------------------------------------
+-- GRAB / BREAK CHEST
+--------------------------------------------------
+local function BreakChest()
+    VirtualInputManager:SendMouseButtonEvent(0,0,0,true,game,0)
+    VirtualInputManager:SendMouseButtonEvent(0,0,0,false,game,0)
+    task.wait(0.1 + math.random()*0.2)
+    VirtualInputManager:SendMouseButtonEvent(0,0,1,true,game,0)
+    VirtualInputManager:SendMouseButtonEvent(0,0,1,false,game,0)
+end
+
+--------------------------------------------------
+-- SERVER HOP
 --------------------------------------------------
 local function ServerHop()
     local PlaceId = game.PlaceId
-    local Success, Servers = pcall(function()
+    local success, servers = pcall(function()
         return HttpService:JSONDecode(game:HttpGet("https://games.roblox.com/v1/games/"..PlaceId.."/servers/Public?sortOrder=Asc&limit=100"))
     end)
-    if Success and Servers and Servers.data then
+    if success and servers and servers.data then
         local available = {}
-        for _, server in ipairs(Servers.data) do
+        for _, server in ipairs(servers.data) do
             if server.playing < server.maxPlayers and server.id ~= game.JobId then
                 table.insert(available, server.id)
             end
         end
         if #available > 0 then
             local randomServer = available[math.random(1,#available)]
-            -- notify player
             if AutoChestTab.Notify then
                 AutoChestTab:Notify("No chest found! Server hopping in "..ServerHopCooldown.."s...")
             else
@@ -1118,9 +1129,8 @@ local function ServerHop()
             end
             task.wait(ServerHopCooldown)
             TeleportService:TeleportToPlaceInstance(PlaceId, randomServer, LocalPlayer)
-            -- reinject script after hop
-            task.wait(5) -- wait for load
-            loadstring(game:HttpGet("https://raw.githubusercontent.com/kAq4/DeadSea/refs/heads/main/Core/script.lua"))()
+            task.wait(5)
+            loadstring(CachedScript)() -- reinject after hop
         end
     end
 end
@@ -1134,8 +1144,7 @@ RunService.Heartbeat:Connect(function()
     local char = LocalPlayer.Character
     if not char then return end
     local hrp = char:FindFirstChild("HumanoidRootPart")
-    local humanoid = char:FindFirstChildOfClass("Humanoid")
-    if not hrp or not humanoid then return end
+    if not hrp then return end
 
     local chest = GetClosestChest(hrp)
     if not chest then
@@ -1147,25 +1156,17 @@ RunService.Heartbeat:Connect(function()
         ChestTimers[chest] = tick()
     end
 
-    -- Pathfind to chest
-    PathfindToChest(humanoid, chest)
+    -- Horizontal pulses toward chest
+    PulseToChest(hrp, chest)
+    LookAtChest(chest)
 
-    -- Look down at chest
-    local camera = workspace.CurrentCamera
-    camera.CFrame = CFrame.lookAt(camera.CFrame.Position, chest.Position - Vector3.new(0,5,0))
-
-    -- Grab chest if close
-    if (chest.Position - hrp.Position).Magnitude < 3 then
-        if math.random() < 0.05 then
-            VirtualInputManager:SendMouseButtonEvent(0,0,0,true,game,0)
-            VirtualInputManager:SendMouseButtonEvent(0,0,0,false,game,0)
-            task.wait(0.1 + math.random()*0.2)
-            VirtualInputManager:SendMouseButtonEvent(0,0,1,true,game,0)
-            VirtualInputManager:SendMouseButtonEvent(0,0,1,false,game,0)
-        end
+    -- Grab if close
+    if (hrp.Position - chest.Position).Magnitude < 3 then
+        BreakChest()
         ChestTimers[chest] = nil
     end
 
+    -- Blacklist chest if stuck >4s
     if tick() - ChestTimers[chest] >= 4 then
         ChestBlacklist[chest] = true
         ChestTimers[chest] = nil
