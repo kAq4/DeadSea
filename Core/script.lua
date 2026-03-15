@@ -985,196 +985,164 @@ end)
 
 
 --------------------------------------------------
--- AUTO CHEST TAB
+-- AUTO CHEST TAB WITH SMOOTH GLIDE AND UI
 --------------------------------------------------
 
-local AutoChest = Window:CreateTab("Auto Chest","Box")
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
 local VirtualInputManager = game:GetService("VirtualInputManager")
+local LocalPlayer = Players.LocalPlayer
+local workspace = workspace
 
+local AutoChestTab = Window:CreateTab("Auto Chest","Box")
+
+-- MJ table
+local MJ = MJ or {}
+MJ.WalkSpeed = 50
+MJ.Speed = true
 MJ.AutoChest = false
 MJ.ChestESP = false
 
 local ChestList = {}
 
 --------------------------------------------------
--- CHEST SCANNER (runs every 2s, low lag)
+-- CHEST SCANNER
 --------------------------------------------------
-
 local function ScanChests()
-
     table.clear(ChestList)
-
     for _,v in ipairs(workspace:GetDescendants()) do
-
         if v.Name == "Hitbox" and v:IsA("BasePart") then
-
             local model = v.Parent
-
-            if model
-            and model:FindFirstChild("Glow")
-            and not v.Anchored
-            and v.Size.Magnitude < 15 then
-
+            if model and model:FindFirstChild("Glow") and not v.Anchored and v.Size.Magnitude < 15 then
                 table.insert(ChestList, v)
-
             end
-
         end
-
     end
-
 end
 
 task.spawn(function()
-
     while task.wait(2) do
         ScanChests()
     end
-
 end)
 
 --------------------------------------------------
--- GET CLOSEST CHEST
+-- CHEST ESP
 --------------------------------------------------
-
-local function GetChest()
-
-    local char = LocalPlayer.Character
-    if not char then return end
-
-    local hrp = char:FindFirstChild("HumanoidRootPart")
-    if not hrp then return end
-
-    local closest
-    local shortest = math.huge
-
-    for _,chest in ipairs(ChestList) do
-
-        local dist = (chest.Position - hrp.Position).Magnitude
-
-        if dist < shortest then
-            shortest = dist
-            closest = chest
-        end
-
-    end
-
-    return closest
-
-end
-
---------------------------------------------------
--- CHEST ESP (very low lag)
---------------------------------------------------
-
 task.spawn(function()
-
     while task.wait(2) do
-
         if not MJ.ChestESP then continue end
-
         for _,chest in ipairs(ChestList) do
-
             local model = chest.Parent
-
             if model and not model:FindFirstChild("ChestESP") then
-
                 local h = Instance.new("Highlight")
                 h.Name = "ChestESP"
                 h.FillColor = Color3.fromRGB(255,255,0)
                 h.FillTransparency = 0.3
                 h.Parent = model
-
             end
-
         end
-
     end
-
 end)
 
 --------------------------------------------------
--- BREAK CHEST (grab → tp up → throw)
+-- GET CLOSEST CHEST
 --------------------------------------------------
-
-local function BreakChest()
-    local chest = GetChest()
+local function GetClosestChest()
     local char = LocalPlayer.Character
-    if not chest or not char then return end
-
+    if not char then return end
     local hrp = char:FindFirstChild("HumanoidRootPart")
     if not hrp then return end
 
-    local smoothing = 0.2
-    local offset = Vector3.new(0,2,2) -- original offset
-    local targetPos = chest.Position + offset
-
-    -- Smooth TP: glide to chest
-    local deltaTime = 0.03 -- roughly one frame
-    local predictedPos = hrp.Position + hrp.Velocity * deltaTime
-    local newPos = predictedPos:Lerp(targetPos, smoothing)
-    hrp.CFrame = CFrame.new(newPos)
-
-    -- Look at chest
-    Camera.CFrame = CFrame.lookAt(Camera.CFrame.Position, chest.Position)
-
-    task.wait(0.15)
-
-    -- MB1 grab
-    VirtualInputManager:SendMouseButtonEvent(0,0,0,true,game,0)
-    VirtualInputManager:SendMouseButtonEvent(0,0,0,false,game,0)
-
-    task.wait(0.2)
-
-    -- TP up 20 studs (keep it smooth)
-    local upPos = hrp.Position + Vector3.new(0,20,0)
-    predictedPos = hrp.Position + hrp.Velocity * deltaTime
-    hrp.CFrame = CFrame.new(predictedPos:Lerp(upPos, smoothing))
-
-    task.wait(0.1)
-
-    -- LOOK DOWN
-        local chestDownPos = chest.Position - Vector3.new(0, 10, 0) -- look slightly below chest center for better throw angle (i think looking at center can cause weird throw sometimes but still its better than looking above)
-    Camera.CFrame = CFrame.lookAt(Camera.CFrame.Position, chestDownPos)
-
-    task.wait(0.1)
-
-    -- MB2 throw
-    VirtualInputManager:SendMouseButtonEvent(0,0,1,true,game,0)
-    VirtualInputManager:SendMouseButtonEvent(0,0,1,false,game,0)
+    local closest
+    local shortest = math.huge
+    for _,chest in ipairs(ChestList) do
+        local dist = (chest.Position - hrp.Position).Magnitude
+        if dist < shortest then
+            shortest = dist
+            closest = chest
+        end
+    end
+    return closest
 end
 
 --------------------------------------------------
--- AUTO FARM LOOP
+-- GLIDE TO CHEST USING SPEED HACK
 --------------------------------------------------
+local function GlideToChest(chest, hrp, hum)
+    if not chest then return end
 
-task.spawn(function()
-
-    while task.wait(1) do
-
-        if MJ.AutoChest then
-            BreakChest()
+    local offset = Vector3.new(0,2,2)
+    local targetPos = chest.Position + offset
+    local moveDir = (targetPos - hrp.Position)
+    
+    if moveDir.Magnitude > 0.5 then
+        local dir = moveDir.Unit
+        if MJ.Speed then
+            hrp.Velocity = Vector3.new(
+                dir.X * MJ.WalkSpeed,
+                hrp.Velocity.Y,
+                dir.Z * MJ.WalkSpeed
+            )
         end
 
+        -- Gradually look down
+        local camera = workspace.CurrentCamera
+        local lookAtPos = chest.Position - Vector3.new(0,5,0)
+        local lookDir = (lookAtPos - camera.CFrame.Position).Unit
+        VirtualInputManager:SendMouseMoveEvent(lookDir.X, lookDir.Y)
+    else
+        hrp.Velocity = Vector3.new(0, hrp.Velocity.Y, 0)
     end
-
-end)
---------------------------------------------------
--- UI
---------------------------------------------------
-
-AutoChest:CreateToggle({
-Name = "Auto Chest Farm",
-CurrentValue = false,
-Callback = function(v)
-MJ.AutoChest = v
 end
+
+--------------------------------------------------
+-- AUTO CHEST LOOP
+--------------------------------------------------
+RunService.Heartbeat:Connect(function()
+    if not MJ.AutoChest then return end
+
+    local char = LocalPlayer.Character
+    if not char then return end
+
+    local hrp = char:FindFirstChild("HumanoidRootPart")
+    local hum = char:FindFirstChildOfClass("Humanoid")
+    if not hrp or not hum then return end
+
+    local chest = GetClosestChest()
+    if not chest then return end
+
+    GlideToChest(chest, hrp, hum)
+
+    -- Grab & throw if close
+    if (chest.Position - hrp.Position).Magnitude < 3 then
+        VirtualInputManager:SendMouseButtonEvent(0,0,0,true,game,0)
+        VirtualInputManager:SendMouseButtonEvent(0,0,0,false,game,0)
+        task.wait(0.2)
+
+        hrp.Velocity = Vector3.new(hrp.Velocity.X, 50, hrp.Velocity.Z)
+        task.wait(0.1)
+
+        VirtualInputManager:SendMouseButtonEvent(0,0,1,true,game,0)
+        VirtualInputManager:SendMouseButtonEvent(0,0,1,false,game,0)
+    end
+end)
+
+--------------------------------------------------
+-- UI TOGGLES
+--------------------------------------------------
+AutoChestTab:CreateToggle({
+    Name = "Auto Chest Farm",
+    CurrentValue = false,
+    Callback = function(v)
+        MJ.AutoChest = v
+    end
 })
 
-AutoChest:CreateToggle({
-Name = "Chest ESP",
-CurrentValue = false,
-Callback = function(v)
-MJ.ChestESP = v
-end
+AutoChestTab:CreateToggle({
+    Name = "Chest ESP",
+    CurrentValue = false,
+    Callback = function(v)
+        MJ.ChestESP = v
+    end
 })
