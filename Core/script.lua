@@ -10,6 +10,16 @@ local Mouse = LocalPlayer:GetMouse()
 local Camera = workspace.CurrentCamera
 
 --------------------------------------------------
+-- AUTO REINJECT
+--------------------------------------------------
+
+if not getgenv().DeadSeaInjected then
+    getgenv().DeadSeaInjected = true
+else
+    MJ.AutoChest = true
+end
+
+--------------------------------------------------
 -- UI
 --------------------------------------------------
 
@@ -1126,7 +1136,50 @@ local function BreakChest()
 
 end
 
+--------------------------------------------------
+-- SERVER HOP
+--------------------------------------------------
 
+local HttpService = game:GetService("HttpService")
+local TeleportService = game:GetService("TeleportService")
+
+local function ServerHop()
+
+    Rayfield:Notify({
+        Title = "DeadSea",
+        Content = "No chests found. Server hopping...",
+        Duration = 4,
+        Image = "activity"
+    })
+
+    local servers = {}
+
+    local req = game:HttpGet(
+        "https://games.roblox.com/v1/games/17556820024/servers/Public?sortOrder=Asc&limit=100"
+    )
+
+    local data = HttpService:JSONDecode(req)
+
+    for _,server in pairs(data.data) do
+        if server.playing < server.maxPlayers
+        and server.id ~= game.JobId then
+
+            table.insert(servers, server.id)
+
+        end
+    end
+
+    if #servers > 0 then
+
+        TeleportService:TeleportToPlaceInstance(
+            game.PlaceId,
+            servers[math.random(1,#servers)],
+            LocalPlayer
+        )
+
+    end
+
+end
 --------------------------------------------------
 -- AUTO FARM LOOP
 --------------------------------------------------
@@ -1136,7 +1189,27 @@ task.spawn(function()
     while task.wait(1.5) do
 
         if MJ.AutoChest then
-            BreakChest()
+
+            local chest = GetChest()
+
+            if chest then
+                BreakChest()
+            else
+
+                Rayfield:Notify({
+                    Title = "DeadSea",
+                    Content = "No chests found. Server hopping...",
+                    Duration = 4,
+                    Image = "activity"
+                })
+
+                task.wait(1)
+
+                ServerHop()
+                break
+
+            end
+
         end
 
     end
@@ -1162,3 +1235,22 @@ Callback = function(v)
 MJ.ChestESP = v
 end
 })
+
+--------------------------------------------------
+-- REINJECT AFTER TELEPORT
+--------------------------------------------------
+
+LocalPlayer.OnTeleport:Connect(function(State)
+
+    if State == Enum.TeleportState.Started then
+
+        queue_on_teleport([[
+            loadstring(game:HttpGet("https://raw.githubusercontent.com/kAq4/DeadSea/refs/heads/main/Core/script.lua"))()
+            getgenv().MJ.AutoChest = true
+        ]])
+
+    end
+
+end)
+
+-- i hope this don't go public xD FR FR DON"T LEAK THIS PART PLS, this is the only way to keep the auto farm working after teleport without users having to manually reinject :)
