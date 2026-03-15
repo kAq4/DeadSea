@@ -985,25 +985,27 @@ end)
 
 
 --------------------------------------------------
--- AUTO CHEST TAB WITH SMOOTH GLIDE AND UI
+-- HUMAN-LIKE AUTO CHEST (ANTI-CHEAT BYPASS)
 --------------------------------------------------
-
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local VirtualInputManager = game:GetService("VirtualInputManager")
 local LocalPlayer = Players.LocalPlayer
 local workspace = workspace
 
+-- UI setup
 local AutoChestTab = Window:CreateTab("Auto Chest","Box")
 
 -- MJ table
 local MJ = MJ or {}
-MJ.WalkSpeed = 50
-MJ.Speed = true
 MJ.AutoChest = false
 MJ.ChestESP = false
 
+local BaseSpeed = 150 -- target max speed
+local Acceleration = 50 -- acceleration smoothing
 local ChestList = {}
+local ChestBlacklist = {}
+local ChestTimers = {}
 
 --------------------------------------------------
 -- CHEST SCANNER
@@ -1046,17 +1048,14 @@ task.spawn(function()
 end)
 
 --------------------------------------------------
--- GET CLOSEST CHEST
+-- GET CLOSEST CHEST (ignores blacklisted)
 --------------------------------------------------
-local function GetClosestChest()
-    local char = LocalPlayer.Character
-    if not char then return end
-    local hrp = char:FindFirstChild("HumanoidRootPart")
+local function GetClosestChest(hrp)
     if not hrp then return end
-
     local closest
     local shortest = math.huge
     for _,chest in ipairs(ChestList) do
+        if ChestBlacklist[chest] then continue end
         local dist = (chest.Position - hrp.Position).Magnitude
         if dist < shortest then
             shortest = dist
@@ -1067,64 +1066,71 @@ local function GetClosestChest()
 end
 
 --------------------------------------------------
--- GLIDE TO CHEST USING SPEED HACK
+-- SMOOTH VELOCITY GLIDE USING SPEED TRICK
 --------------------------------------------------
-local function GlideToChest(chest, hrp, hum)
-    if not chest then return end
+local function GlideToChest(hrp, chest, deltaTime)
+    if not chest then return Vector3.new() end
+    local targetPos = chest.Position + Vector3.new(0,2,2)
+    local direction = (targetPos - hrp.Position)
+    local distance = direction.Magnitude
+    if distance < 0.5 then return Vector3.new() end
 
-    local offset = Vector3.new(0,2,2)
-    local targetPos = chest.Position + offset
-    local moveDir = (targetPos - hrp.Position)
-    
-    if moveDir.Magnitude > 0.5 then
-        local dir = moveDir.Unit
-        if MJ.Speed then
-            hrp.Velocity = Vector3.new(
-                dir.X * MJ.WalkSpeed,
-                hrp.Velocity.Y,
-                dir.Z * MJ.WalkSpeed
-            )
-        end
+    local dir = direction.Unit
 
-        -- Gradually look down
-        local camera = workspace.CurrentCamera
-        local lookAtPos = chest.Position - Vector3.new(0,5,0)
-        local lookDir = (lookAtPos - camera.CFrame.Position).Unit
-        VirtualInputManager:SendMouseMoveEvent(lookDir.X, lookDir.Y)
-    else
-        hrp.Velocity = Vector3.new(0, hrp.Velocity.Y, 0)
-    end
+    -- velocity lerp for smooth acceleration
+    local currentVel = Vector3.new(hrp.Velocity.X, 0, hrp.Velocity.Z)
+    local targetVel = dir * BaseSpeed
+    local newVel = currentVel:Lerp(targetVel, math.clamp(Acceleration * deltaTime / BaseSpeed,0,1))
+    hrp.Velocity = Vector3.new(newVel.X, hrp.Velocity.Y, newVel.Z)
+
+    -- look down naturally
+    local camera = workspace.CurrentCamera
+    local lookAtPos = chest.Position - Vector3.new(0,5,0)
+    local lookDir = (lookAtPos - camera.CFrame.Position).Unit
+    VirtualInputManager:SendMouseMoveEvent(lookDir.X, lookDir.Y)
+
+    return direction
 end
 
 --------------------------------------------------
 -- AUTO CHEST LOOP
 --------------------------------------------------
-RunService.Heartbeat:Connect(function()
+RunService.Heartbeat:Connect(function(deltaTime)
     if not MJ.AutoChest then return end
 
     local char = LocalPlayer.Character
     if not char then return end
-
     local hrp = char:FindFirstChild("HumanoidRootPart")
-    local hum = char:FindFirstChildOfClass("Humanoid")
-    if not hrp or not hum then return end
+    if not hrp then return end
 
-    local chest = GetClosestChest()
+    local chest = GetClosestChest(hrp)
     if not chest then return end
 
-    GlideToChest(chest, hrp, hum)
+    if not ChestTimers[chest] then
+        ChestTimers[chest] = tick()
+    end
 
-    -- Grab & throw if close
+    GlideToChest(hrp, chest, deltaTime)
+
+    -- stuck chest check >4 sec
     if (chest.Position - hrp.Position).Magnitude < 3 then
-        VirtualInputManager:SendMouseButtonEvent(0,0,0,true,game,0)
-        VirtualInputManager:SendMouseButtonEvent(0,0,0,false,game,0)
-        task.wait(0.2)
+        if tick() - ChestTimers[chest] >= 4 then
+            ChestBlacklist[chest] = true
+            ChestTimers[chest] = nil
+            return
+        end
 
-        hrp.Velocity = Vector3.new(hrp.Velocity.X, 50, hrp.Velocity.Z)
-        task.wait(0.1)
-
-        VirtualInputManager:SendMouseButtonEvent(0,0,1,true,game,0)
-        VirtualInputManager:SendMouseButtonEvent(0,0,1,false,game,0)
+        -- randomized grab & throw
+        if math.random() < 0.02 then
+            VirtualInputManager:SendMouseButtonEvent(0,0,0,true,game,0)
+            VirtualInputManager:SendMouseButtonEvent(0,0,0,false,game,0)
+            task.wait(0.1 + math.random()*0.2)
+            hrp.Velocity = Vector3.new(hrp.Velocity.X, 50, hrp.Velocity.Z)
+            task.wait(0.05 + math.random()*0.1)
+            VirtualInputManager:SendMouseButtonEvent(0,0,1,true,game,0)
+            VirtualInputManager:SendMouseButtonEvent(0,0,1,false,game,0)
+        end
+        ChestTimers[chest] = nil
     end
 end)
 
