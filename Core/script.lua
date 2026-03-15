@@ -1120,49 +1120,41 @@ task.spawn(function()
 
 end)
 
---------------------------------------------------
--- BREAK CHEST (grab → tp up → throw)
---------------------------------------------------
 
-local function BreakChest(chest)
+local function BreakChest()
 
+    local chest = GetChest()
     local char = LocalPlayer.Character
     if not chest or not char then return end
 
     local hrp = char:FindFirstChild("HumanoidRootPart")
     if not hrp then return end
 
-    -- velocity movement
-    local direction = (chest.Position - hrp.Position).Unit
+    -- TP near chest
+    hrp.CFrame = chest.CFrame + Vector3.new(0,2,2)
 
-    hrp.Velocity = Vector3.new(
-        direction.X * MJ.WalkSpeed,
-        hrp.Velocity.Y,
-        direction.Z * MJ.WalkSpeed
-    )
-
-    repeat task.wait()
-    until (hrp.Position - chest.Position).Magnitude < 6
-
-    hrp.Velocity = Vector3.new(0,hrp.Velocity.Y,0)
-
-    -- grab chest
+    -- look at chest
     Camera.CFrame = CFrame.lookAt(Camera.CFrame.Position, chest.Position)
 
     task.wait(0.15)
 
+    -- MB1 grab
     VirtualInputManager:SendMouseButtonEvent(0,0,0,true,game,0)
     VirtualInputManager:SendMouseButtonEvent(0,0,0,false,game,0)
 
     task.wait(0.2)
 
-    -- jump up
-    hrp.Velocity = Vector3.new(0,150,0)
+    -- TP up 20 studs
+    hrp.CFrame = hrp.CFrame + Vector3.new(0,20,0)
 
-    task.wait(0.25)
+    task.wait(0.1)
 
+    -- LOOK DOWN
     Camera.CFrame = CFrame.lookAt(Camera.CFrame.Position, chest.Position - Vector3.new(0,10,0))
 
+    task.wait(0.1)
+
+    -- MB2 throw
     VirtualInputManager:SendMouseButtonEvent(0,0,1,true,game,0)
     VirtualInputManager:SendMouseButtonEvent(0,0,1,false,game,0)
 
@@ -1213,18 +1205,20 @@ local function ServerHop()
 
 end
 --------------------------------------------------
--- AUTO FARM PATH LOOP
+-- AUTO FARM LOOP
 --------------------------------------------------
 
 task.spawn(function()
 
-    while task.wait(1) do
+    while task.wait(1.5) do
 
         if MJ.AutoChest then
 
-            local path = BuildChestPath()
+            local chest = GetChest()
 
-            if #path == 0 then
+            if chest then
+                BreakChest()
+            else
 
                 Rayfield:Notify({
                     Title = "DeadSea",
@@ -1234,19 +1228,9 @@ task.spawn(function()
                 })
 
                 task.wait(1)
+
                 ServerHop()
                 break
-
-            end
-
-            for _,chest in ipairs(path) do
-
-                if not MJ.AutoChest then break end
-
-                if chest and chest.Parent then
-                    BreakChest(chest)
-                    task.wait(2)
-                end
 
             end
 
