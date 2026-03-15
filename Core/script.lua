@@ -985,27 +985,29 @@ end)
 
 
 --------------------------------------------------
--- HUMAN-LIKE AUTO CHEST (ANTI-CHEAT BYPASS)
+-- AUTO CHEST FARM WITH PATHFINDING + SERVER HOP REINJECT
 --------------------------------------------------
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
+local TeleportService = game:GetService("TeleportService")
 local VirtualInputManager = game:GetService("VirtualInputManager")
+local PathfindingService = game:GetService("PathfindingService")
 local LocalPlayer = Players.LocalPlayer
 local workspace = workspace
+local HttpService = game:GetService("HttpService")
 
 -- UI setup
-local AutoChestTab = Window:CreateTab("Auto Chest","Box")
+local AutoChestTab = Window:CreateTab("Auto Chest","Box") -- your UI library
 
 -- MJ table
 local MJ = MJ or {}
 MJ.AutoChest = false
 MJ.ChestESP = false
 
-local BaseSpeed = 150 -- target max speed
-local Acceleration = 50 -- acceleration smoothing
 local ChestList = {}
 local ChestBlacklist = {}
 local ChestTimers = {}
+local ServerHopCooldown = 10 -- seconds before server hop
 
 --------------------------------------------------
 -- CHEST SCANNER
@@ -1048,7 +1050,7 @@ task.spawn(function()
 end)
 
 --------------------------------------------------
--- GET CLOSEST CHEST (ignores blacklisted)
+-- GET CLOSEST CHEST
 --------------------------------------------------
 local function GetClosestChest(hrp)
     if not hrp then return end
@@ -1066,70 +1068,106 @@ local function GetClosestChest(hrp)
 end
 
 --------------------------------------------------
--- SMOOTH VELOCITY GLIDE USING SPEED TRICK
+-- PATHFIND TO CHEST
 --------------------------------------------------
-local function GlideToChest(hrp, chest, deltaTime)
-    if not chest then return Vector3.new() end
-    local targetPos = chest.Position + Vector3.new(0,2,2)
-    local direction = (targetPos - hrp.Position)
-    local distance = direction.Magnitude
-    if distance < 0.5 then return Vector3.new() end
+local function PathfindToChest(humanoid, chest)
+    if not humanoid or not chest then return false end
+    local hrp = humanoid.RootPart
+    if not hrp then return false end
 
-    local dir = direction.Unit
+    local path = PathfindingService:CreatePath({
+        AgentRadius = 2,
+        AgentHeight = 5,
+        AgentCanJump = true,
+        AgentJumpHeight = 10,
+        AgentMaxSlope = 45,
+    })
+    path:ComputeAsync(hrp.Position, chest.Position + Vector3.new(0,2,0))
 
-    -- velocity lerp for smooth acceleration
-    local currentVel = Vector3.new(hrp.Velocity.X, 0, hrp.Velocity.Z)
-    local targetVel = dir * BaseSpeed
-    local newVel = currentVel:Lerp(targetVel, math.clamp(Acceleration * deltaTime / BaseSpeed,0,1))
-    hrp.Velocity = Vector3.new(newVel.X, hrp.Velocity.Y, newVel.Z)
+    local waypoints = path:GetWaypoints()
+    for _,wp in ipairs(waypoints) do
+        humanoid:MoveTo(wp.Position)
+        humanoid.MoveToFinished:Wait()
+        if MJ.AutoChest == false then return false end
+    end
+    return true
+end
 
-    -- look down naturally
-    local camera = workspace.CurrentCamera
-    local lookAtPos = chest.Position - Vector3.new(0,5,0)
-    local lookDir = (lookAtPos - camera.CFrame.Position).Unit
-    VirtualInputManager:SendMouseMoveEvent(lookDir.X, lookDir.Y)
-
-    return direction
+--------------------------------------------------
+-- SERVER HOP FUNCTION WITH SCRIPT REINJECT
+--------------------------------------------------
+local function ServerHop()
+    local PlaceId = game.PlaceId
+    local Success, Servers = pcall(function()
+        return HttpService:JSONDecode(game:HttpGet("https://games.roblox.com/v1/games/"..PlaceId.."/servers/Public?sortOrder=Asc&limit=100"))
+    end)
+    if Success and Servers and Servers.data then
+        local available = {}
+        for _, server in ipairs(Servers.data) do
+            if server.playing < server.maxPlayers and server.id ~= game.JobId then
+                table.insert(available, server.id)
+            end
+        end
+        if #available > 0 then
+            local randomServer = available[math.random(1,#available)]
+            -- notify player
+            if AutoChestTab.Notify then
+                AutoChestTab:Notify("No chest found! Server hopping in "..ServerHopCooldown.."s...")
+            else
+                print("No chest found! Server hopping in "..ServerHopCooldown.."s...")
+            end
+            task.wait(ServerHopCooldown)
+            TeleportService:TeleportToPlaceInstance(PlaceId, randomServer, LocalPlayer)
+            -- reinject script after hop
+            task.wait(5) -- wait for load
+            loadstring(game:HttpGet("https://raw.githubusercontent.com/kAq4/DeadSea/refs/heads/main/Core/script.lua"))()
+        end
+    end
 end
 
 --------------------------------------------------
 -- AUTO CHEST LOOP
 --------------------------------------------------
-RunService.Heartbeat:Connect(function(deltaTime)
+RunService.Heartbeat:Connect(function()
     if not MJ.AutoChest then return end
 
     local char = LocalPlayer.Character
     if not char then return end
     local hrp = char:FindFirstChild("HumanoidRootPart")
-    if not hrp then return end
+    local humanoid = char:FindFirstChildOfClass("Humanoid")
+    if not hrp or not humanoid then return end
 
     local chest = GetClosestChest(hrp)
-    if not chest then return end
+    if not chest then
+        task.spawn(ServerHop)
+        return
+    end
 
     if not ChestTimers[chest] then
         ChestTimers[chest] = tick()
     end
 
-    GlideToChest(hrp, chest, deltaTime)
+    -- Pathfind to chest
+    PathfindToChest(humanoid, chest)
 
-    -- stuck chest check >4 sec
+    -- Look down at chest
+    local camera = workspace.CurrentCamera
+    camera.CFrame = CFrame.lookAt(camera.CFrame.Position, chest.Position - Vector3.new(0,5,0))
+
+    -- Grab chest if close
     if (chest.Position - hrp.Position).Magnitude < 3 then
-        if tick() - ChestTimers[chest] >= 4 then
-            ChestBlacklist[chest] = true
-            ChestTimers[chest] = nil
-            return
-        end
-
-        -- randomized grab & throw
-        if math.random() < 0.02 then
+        if math.random() < 0.05 then
             VirtualInputManager:SendMouseButtonEvent(0,0,0,true,game,0)
             VirtualInputManager:SendMouseButtonEvent(0,0,0,false,game,0)
             task.wait(0.1 + math.random()*0.2)
-            hrp.Velocity = Vector3.new(hrp.Velocity.X, 50, hrp.Velocity.Z)
-            task.wait(0.05 + math.random()*0.1)
             VirtualInputManager:SendMouseButtonEvent(0,0,1,true,game,0)
             VirtualInputManager:SendMouseButtonEvent(0,0,1,false,game,0)
         end
+        ChestTimers[chest] = nil
+    end
+
+    if tick() - ChestTimers[chest] >= 4 then
+        ChestBlacklist[chest] = true
         ChestTimers[chest] = nil
     end
 end)
