@@ -1127,10 +1127,18 @@ local function ServerHop()
             else
                 print("No chest found! Server hopping in "..ServerHopCooldown.."s...")
             end
-            task.wait(ServerHopCooldown)
-            TeleportService:TeleportToPlaceInstance(PlaceId, randomServer, LocalPlayer)
-            task.wait(5)
-            loadstring(CachedScript)() -- reinject after hop
+-- Replace old reinjection code with:
+task.spawn(function()
+    TeleportService:TeleportToPlaceInstance(PlaceId, randomServer, LocalPlayer)
+    -- wait until the new server loads
+    -- do NOT immediately loadstring, because your current environment is still old
+    -- you can instead notify the user
+    if AutoChestTab.Notify then
+        AutoChestTab:Notify("Server hop initiated! Please re-enable the script after joining.")
+    else
+        print("Server hop initiated! Please re-enable the script after joining.")
+    end
+end)
         end
     end
 end
