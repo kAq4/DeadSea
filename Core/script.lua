@@ -1034,6 +1034,33 @@ task.spawn(function()
 end)
 
 --------------------------------------------------
+-- BUILD CHEST PATH
+--------------------------------------------------
+
+local function BuildChestPath()
+
+    local char = LocalPlayer.Character
+    if not char then return {} end
+
+    local hrp = char:FindFirstChild("HumanoidRootPart")
+    if not hrp then return {} end
+
+    local path = {}
+
+    for _,chest in ipairs(ChestList) do
+        table.insert(path, chest)
+    end
+
+    table.sort(path,function(a,b)
+        return (a.Position - hrp.Position).Magnitude <
+               (b.Position - hrp.Position).Magnitude
+    end)
+
+    return path
+
+end
+
+--------------------------------------------------
 -- GET CLOSEST CHEST
 --------------------------------------------------
 
@@ -1097,53 +1124,45 @@ end)
 -- BREAK CHEST (grab → tp up → throw)
 --------------------------------------------------
 
-local function BreakChest()
+local function BreakChest(chest)
 
-    local chest = GetChest()
     local char = LocalPlayer.Character
     if not chest or not char then return end
 
     local hrp = char:FindFirstChild("HumanoidRootPart")
     if not hrp then return end
 
-    -- move to chest using velocity
+    -- velocity movement
     local direction = (chest.Position - hrp.Position).Unit
 
-    hrp.AssemblyLinearVelocity = Vector3.new(
-        direction.X * 120,
-        0,
-        direction.Z * 120
+    hrp.Velocity = Vector3.new(
+        direction.X * MJ.WalkSpeed,
+        hrp.Velocity.Y,
+        direction.Z * MJ.WalkSpeed
     )
 
     repeat task.wait()
     until (hrp.Position - chest.Position).Magnitude < 6
 
-    hrp.AssemblyLinearVelocity = Vector3.zero
+    hrp.Velocity = Vector3.new(0,hrp.Velocity.Y,0)
 
-    -- look at chest
+    -- grab chest
     Camera.CFrame = CFrame.lookAt(Camera.CFrame.Position, chest.Position)
 
     task.wait(0.15)
 
-    -- MB1 grab
     VirtualInputManager:SendMouseButtonEvent(0,0,0,true,game,0)
     VirtualInputManager:SendMouseButtonEvent(0,0,0,false,game,0)
 
     task.wait(0.2)
 
-    -- go up using velocity
-    hrp.AssemblyLinearVelocity = Vector3.new(0,150,0)
+    -- jump up
+    hrp.Velocity = Vector3.new(0,150,0)
 
     task.wait(0.25)
 
-    hrp.AssemblyLinearVelocity = Vector3.zero
-
-    -- look down
     Camera.CFrame = CFrame.lookAt(Camera.CFrame.Position, chest.Position - Vector3.new(0,10,0))
 
-    task.wait(0.1)
-
-    -- MB2 throw
     VirtualInputManager:SendMouseButtonEvent(0,0,1,true,game,0)
     VirtualInputManager:SendMouseButtonEvent(0,0,1,false,game,0)
 
@@ -1194,20 +1213,18 @@ local function ServerHop()
 
 end
 --------------------------------------------------
--- AUTO FARM LOOP
+-- AUTO FARM PATH LOOP
 --------------------------------------------------
 
 task.spawn(function()
 
-    while task.wait(1.5) do
+    while task.wait(1) do
 
         if MJ.AutoChest then
 
-            local chest = GetChest()
+            local path = BuildChestPath()
 
-            if chest then
-                BreakChest()
-            else
+            if #path == 0 then
 
                 Rayfield:Notify({
                     Title = "DeadSea",
@@ -1217,9 +1234,19 @@ task.spawn(function()
                 })
 
                 task.wait(1)
-
                 ServerHop()
                 break
+
+            end
+
+            for _,chest in ipairs(path) do
+
+                if not MJ.AutoChest then break end
+
+                if chest and chest.Parent then
+                    BreakChest(chest)
+                    task.wait(2)
+                end
 
             end
 
