@@ -1106,8 +1106,19 @@ local function BreakChest()
     local hrp = char:FindFirstChild("HumanoidRootPart")
     if not hrp then return end
 
-    -- TP near chest
-    hrp.CFrame = chest.CFrame + Vector3.new(0,2,2)
+    -- move to chest using velocity
+    local direction = (chest.Position - hrp.Position).Unit
+
+    hrp.AssemblyLinearVelocity = Vector3.new(
+        direction.X * 120,
+        0,
+        direction.Z * 120
+    )
+
+    repeat task.wait()
+    until (hrp.Position - chest.Position).Magnitude < 6
+
+    hrp.AssemblyLinearVelocity = Vector3.zero
 
     -- look at chest
     Camera.CFrame = CFrame.lookAt(Camera.CFrame.Position, chest.Position)
@@ -1120,12 +1131,14 @@ local function BreakChest()
 
     task.wait(0.2)
 
-    -- TP up 20 studs
-    hrp.CFrame = hrp.CFrame + Vector3.new(0,20,0)
+    -- go up using velocity
+    hrp.AssemblyLinearVelocity = Vector3.new(0,150,0)
 
-    task.wait(0.1)
+    task.wait(0.25)
 
-    -- LOOK DOWN
+    hrp.AssemblyLinearVelocity = Vector3.zero
+
+    -- look down
     Camera.CFrame = CFrame.lookAt(Camera.CFrame.Position, chest.Position - Vector3.new(0,10,0))
 
     task.wait(0.1)
