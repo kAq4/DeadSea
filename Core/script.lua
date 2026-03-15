@@ -1098,7 +1098,6 @@ end)
 --------------------------------------------------
 
 local function BreakChest()
-
     local chest = GetChest()
     local char = LocalPlayer.Character
     if not chest or not char then return end
@@ -1106,10 +1105,17 @@ local function BreakChest()
     local hrp = char:FindFirstChild("HumanoidRootPart")
     if not hrp then return end
 
-    -- TP near chest
-    hrp.CFrame = chest.CFrame + Vector3.new(0,2,2)
+    local smoothing = 0.2
+    local offset = Vector3.new(0,2,2) -- original offset
+    local targetPos = chest.Position + offset
 
-    -- look at chest
+    -- Smooth TP: glide to chest
+    local deltaTime = 0.03 -- roughly one frame
+    local predictedPos = hrp.Position + hrp.Velocity * deltaTime
+    local newPos = predictedPos:Lerp(targetPos, smoothing)
+    hrp.CFrame = CFrame.new(newPos)
+
+    -- Look at chest
     Camera.CFrame = CFrame.lookAt(Camera.CFrame.Position, chest.Position)
 
     task.wait(0.15)
@@ -1120,20 +1126,22 @@ local function BreakChest()
 
     task.wait(0.2)
 
-    -- TP up 20 studs
-    hrp.CFrame = hrp.CFrame + Vector3.new(0,20,0)
+    -- TP up 20 studs (keep it smooth)
+    local upPos = hrp.Position + Vector3.new(0,20,0)
+    predictedPos = hrp.Position + hrp.Velocity * deltaTime
+    hrp.CFrame = CFrame.new(predictedPos:Lerp(upPos, smoothing))
 
     task.wait(0.1)
 
     -- LOOK DOWN
-    Camera.CFrame = CFrame.lookAt(Camera.CFrame.Position, chest.Position - Vector3.new(0,10,0))
+        local chestDownPos = chest.Position - Vector3.new(0, 10, 0) -- look slightly below chest center for better throw angle (i think looking at center can cause weird throw sometimes but still its better than looking above)
+    Camera.CFrame = CFrame.lookAt(Camera.CFrame.Position, chestDownPos)
 
     task.wait(0.1)
 
     -- MB2 throw
     VirtualInputManager:SendMouseButtonEvent(0,0,1,true,game,0)
     VirtualInputManager:SendMouseButtonEvent(0,0,1,false,game,0)
-
 end
 
 --------------------------------------------------
